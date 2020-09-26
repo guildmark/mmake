@@ -3,13 +3,14 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "parser.h"
 
-#define TEST 10
+#define MAX_LENGTH 1024
 
-// SHOULD NOT BE NEEDED ?
 struct makefile {
 	struct rule *rules;
 };
@@ -22,26 +23,46 @@ struct rule {
 };
 
 
-FILE *openFile(void);
+FILE *openFile(char *name);
 void printRule(struct rule *rule);
+int checkTimeDifference(const char *target, const char **prereq);
+
+void execCommand(struct rule *rule) {
+     pid_t pid = fork();
+    //If problem occurs, exit
+    if(pid < 0) {
+        perror("Error creating process");
+        exit(EXIT_FAILURE);
+    }
+    //Child process
+   if(pid == 0) {
+        //Child stuff
+        char **commandArgs = rule_cmd(rule);
+        //Execute command, exit if failed
+        printf("Executing command %s\n", commandArgs[0]);
+        if(execvp(commandArgs[0], commandArgs) < 0) {
+            perror("Error executing program");
+            exit(EXIT_FAILURE);
+        }
+                
+    }
+    else {
+        //Parent
+        int status;
+        wait(&status);
+    }
+}
 
 
 int main(int argc, const char **argv) {
 
-    //char testString[TEST];
-    struct stat targetStat;
-    //struct stat prereqStat;
+    char *fileName = "mmakefile2";
 
-
-    /*
-    När mmake startas så kommer den ladda in alla regler från makefilen
-    mmakefile i nuvarande katalog eller filen som är specificerad med -f
-    flaggan. */
     //Read file
-
     if(argc != 2) {
+
         //Read specific file 'mmakefile'
-        FILE *f = openFile();
+        FILE *f = openFile(fileName);
 
         //Parse makefile, exit if failed
         makefile *m = parse_makefile(f);
@@ -54,33 +75,28 @@ int main(int argc, const char **argv) {
 
         printf("Default target: %s\n", target);
 
-        //Check makefile rule
+        //Check makefile rules for default target
         struct rule *rules = makefile_rule(m, target);
-        if(rules == NULL) {
-            fprintf(stderr, "No rules in makefile!\n");
-            exit(EXIT_FAILURE);
-        }
-
-        /*  Ett target ska endast byggas ifall någon av följande tre situationer
-            gäller:
-
-            Target filen existerar inte
-            Tidpunkt då en prerequisite-fil modiferades är senare än tidpunkt då target-filen modiferades
-            Flaggan -B används/
-            */
+    
+        
         printRule(rules);
-        //Check stat of target and prerequisites
-        if(stat(target, &targetStat) < 0) {
-            fprintf(stderr, "Error checking stat!\n");
-            exit(EXIT_FAILURE);
-        }
-        printf("%s latest modified on: %ld", target, targetStat.st_atim);
 
-        //If target file does not exist, build file
-        if(target == NULL) {
-            // BUILD
+        struct rule *nextRule = rules->next;
+        printRule(nextRule);
+        
+        const char **prereq = rule_prereq(rules);
+        if(checkTimeDifference(target, prereq) == 0) {
+            //BUILD
+            //printf("Prereq has been modified, building...\n");
+            //Create process and execute command
+            execCommand(rules);
         }
+        //Else if file doesnt exist
+        //Else if -B flag is used
 
+
+
+        
         //When done, close the makefile
         makefile_del(m);
     }
@@ -95,45 +111,95 @@ int main(int argc, const char **argv) {
     return 0;
 }
 
-FILE *openFile(void) {
+FILE *openFile(char *name) {
 
-    char *fileName = "mmakefile";
     //Open file for reading
-    FILE *f = fopen(fileName, "r");
+    FILE *f = fopen(name, "r");
     //if failed, exit with error
     if(f == NULL) {
         perror("File error");
          exit(EXIT_FAILURE);
     }
 
-    
-
-
     return f;
 }
+
+int checkTimeDifference(const char *target, const char **prereq) {
+
+    //Might just use difftime (?)
+    struct stat targetStat;
+    struct stat prereqStat;
+
+    //Check size of string array and loop through prerequisites to check difference
+    //int arrSize = sizeof(prereq) / sizeof(prereq[0]);
+    //printf("Size of string array: %d\n", arrSize);
+
+     printf("Checking target stats\n");
+    if(stat(target, &targetStat) < 0) {
+        fprintf(stderr, "Error checking stat!\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("Access time  = %ld\n",targetStat.st_atime);
+    printf("Modification time  = %ld\n",targetStat.st_mtime);
+
+    printf("\n");
+
+    time_t targetTime = targetStat.st_mtime;
+
+
+    int i = 0;
+    //Check all prerequisites
+    while(prereq[i] != NULL) {
+
+        printf("Checking prereq stats\n");
+
+        if(stat(prereq[i], &prereqStat) < 0) {
+            fprintf(stderr, "Error checking stat!\n");
+            exit(EXIT_FAILURE);
+        }
+        printf("File: %s\n", prereq[i]);
+        printf("Access time  = %ld\n",prereqStat.st_atime);
+        printf("Modification time  = %ld\n",prereqStat.st_mtime);
+
+        time_t prereqTime = prereqStat.st_mtime;
+
+        //Check time difference between target file and preqreq file
+        //double timeDiff = difftime(targetTime, prereqTime);
+        long int timeDiff = targetTime - prereqTime;
+        printf("Time difference: %ld\n", timeDiff);
+
+        if(difftime(targetTime, prereqTime) < 0) {
+            return 1;
+        }
+
+        i++;
+
+    }
+
+    return 0;
+
+}
+
 
 /*
 * TESTFUNCTION: Print contents of rule
 * */
 void printRule(struct rule *rule) {
 
+    const char **prereq = rule_prereq(rule);
+    char **cmd = rule_cmd(rule);
+
     int i = 0;
-    printf("TARGET: %s\n", rule->target);
-    while(rule->prereq[i] != NULL) {
-        printf("PREREQUISITE[%d]: %s\n", i, rule->prereq[i]);
+    //printf("TARGET: %s\n", rule->target);
+    while(prereq[i] != NULL) {
+        printf("PREREQUISITE[%d]: %s\n", i, prereq[i]);
         i++;
     }
     int j = 0;
-    while(rule->cmd[i] != NULL) {
-        printf("COMMAND[%d]: %s\n", j, rule->cmd[j]);
+    while(cmd[j] != NULL) {
+        printf("COMMAND[%d]: %s\n", j, cmd[j]);
         j++;
     }
-    printf("TARGET: %s\n", rule->target);
-    printf("NEXT: %s\n", rule->next->target);
-}
 
-int fileHasChanged(void) {
-    //Tidpunkt då en prerequisite-fil modiferades är senare än tidpunkt då target-filen modiferades
-
-    return 1;
+    printf("\n");
 }

@@ -32,7 +32,113 @@ FILE *openFile(char *name);
 void printRule(struct rule *rule);
 int checkTimeDifference(const char *target, const char **prereq);
 void execCommand(struct rule *rule);
+void buildMakefile(char *name, char **tarArray, int option);
 
+
+
+int main(int argc, char **argv) {
+
+    char *fileName = "mmakefile";
+    char *target = (char * ) malloc(sizeof(char) * MAX_LENGTH);
+    char **targetArr = (char **) malloc(sizeof(char)*MAX_LENGTH);
+
+    if(fileName == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+    if(target == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+    if(targetArr == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+
+    //fileName = strdup("mmakefile");
+
+    //If no arguments, build file "mmakefile"
+    if(argc == 1) {
+        buildMakefile(fileName, targetArr, 0);
+    }
+    //File with arguments
+    else {
+        int opt;
+        int option = OPT_DEFAULT;
+        //const char **targets;
+        //const char *target;
+        //Do different things depending on the flag used
+        while((opt = getopt(argc, argv, "Bsf:")) != -1) {
+            switch(opt) {
+                case 'f':
+                    // Let user specify a certain makefile
+                    fileName = strdup(optarg);
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("New makefile to use: %s\n", fileName);
+
+                    break;
+                case 's':
+                    //close stdout
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("Closing stdout..\n");
+                    close(STDOUT_FILENO);
+                    break;
+                case 'B':
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("Forcing rebuild...\n");
+                    //target = argv[optind];
+                    option = OPT_FORCE_BUILD;
+                    //buildMakefile(fileName, NULL, 1);
+                    break;
+                default:
+                    //Specify target
+                    //printf("Current optind: %d\n ", optind);
+                    printf("Unknown option!\n");
+                    //const char *target = strdup(argv[1]);
+                    //buildMakefile(fileName, target);
+                    exit(EXIT_SUCCESS);
+            }
+        }
+
+        //arguments after options are targets to build
+        //target = strdup(argv[optind]);
+        /*
+        printf("argv[optind] = %s\n", argv[optind]);
+        printf("Option: %d\n", option);
+        printf("Target: %s\n", target);
+        printf("Filename: %s\n", fileName);
+        */
+        //Let user choose a list of targets or go with default
+        int targetCount = 0;
+
+        //printf("Loops: %d\n", argc-optind);
+        for(int i = 0; i < argc-optind; i++) {
+            //add each target to array
+            targetArr[i] = argv[optind + i];
+            printf("TargetArr[%d]: %s\n", i, targetArr[i]);
+            targetCount++;
+        }
+
+        
+        //Either check all targets in the rule or specific targets, use option to decide
+        if(targetArr[0] != NULL) {
+            option = OPT_SPEC_TARGET+targetCount;
+        }
+
+        //Parse the makefile and build the targets
+        printf("Building file with option value: %d\n", option);
+        buildMakefile(fileName, targetArr, option);
+
+
+    }
+
+
+    free(target);
+    free(targetArr);
+    free(fileName);
+
+    return 0;
+}
 void buildMakefile(char *name, char **tarArray, int option) {
 
     //Open file for reading
@@ -142,7 +248,7 @@ void buildMakefile(char *name, char **tarArray, int option) {
             //printf("Next rule..\n");
             rules = rules->next;
             //Wrong tar, need to loop anyway?
-            target = strdup(rules->target);
+            target = rules->target;
             prereq = rule_prereq(rules);
             
             if(checkTimeDifference(target, prereq) == 1) {
@@ -152,117 +258,19 @@ void buildMakefile(char *name, char **tarArray, int option) {
                 //printf("Executing next command...\n");
                 execCommand(rules);
             }
-
-        }
-    }
-
-    fclose(f);
-    makefile_del(m);
-}
-
-int main(int argc, char **argv) {
-
-    char *fileName = "mmakefile";
-    char *target = (char * ) malloc(sizeof(char) * MAX_LENGTH);
-    char **targetArr = (char **) malloc(sizeof(char)*MAX_LENGTH);
-
-    if(fileName == NULL) {
-        perror("Error allocating memory");
-        exit(EXIT_FAILURE);
-    }
-    if(target == NULL) {
-        perror("Error allocating memory");
-        exit(EXIT_FAILURE);
-    }
-    if(targetArr == NULL) {
-        perror("Error allocating memory");
-        exit(EXIT_FAILURE);
-    }
-
-    //fileName = strdup("mmakefile");
-
-    //If no arguments, build file "mmakefile"
-    if(argc == 1) {
-        buildMakefile(fileName, targetArr, 0);
-    }
-    //File with arguments
-    else {
-        int opt;
-        int option = OPT_DEFAULT;
-        //const char **targets;
-        //const char *target;
-        //Do different things depending on the flag used
-        while((opt = getopt(argc, argv, "Bsf:")) != -1) {
-            switch(opt) {
-                case 'f':
-                    // Let user specify a certain makefile
-                    fileName = strdup(optarg);
-                    //printf("Current optind: %d\n ", optind);
-                    //printf("New makefile to use: %s\n", fileName);
-
-                    break;
-                case 's':
-                    //close stdout
-                    //printf("Current optind: %d\n ", optind);
-                    //printf("Closing stdout..\n");
-                    close(STDOUT_FILENO);
-                    break;
-                case 'B':
-                    //printf("Current optind: %d\n ", optind);
-                    //printf("Forcing rebuild...\n");
-                    //target = argv[optind];
-                    option = OPT_FORCE_BUILD;
-                    //buildMakefile(fileName, NULL, 1);
-                    break;
-                default:
-                    //Specify target
-                    //printf("Current optind: %d\n ", optind);
-                    printf("Unknown option!\n");
-                    //const char *target = strdup(argv[1]);
-                    //buildMakefile(fileName, target);
-                    exit(EXIT_SUCCESS);
+            else {
+                printf("%s is already up to date.\n", target);
             }
+
         }
-
-        //arguments after options are targets to build
-        //target = strdup(argv[optind]);
-        /*
-        printf("argv[optind] = %s\n", argv[optind]);
-        printf("Option: %d\n", option);
-        printf("Target: %s\n", target);
-        printf("Filename: %s\n", fileName);
-        */
-        //Let user choose a list of targets or go with default
-        int targetCount = 0;
-
-        //printf("Loops: %d\n", argc-optind);
-        for(int i = 0; i < argc-optind; i++) {
-            //add each target to array
-            targetArr[i] = strdup(argv[optind + i]);
-            printf("TargetArr[%d]: %s\n", i, targetArr[i]);
-            targetCount++;
-        }
-
-        
-        //Either check all targets in the rule or specific targets, use option to decide
-        if(targetArr[0] != NULL) {
-            option = OPT_SPEC_TARGET+targetCount;
-        }
-
-        //Parse the makefile and build the targets
-        printf("Building file with option value: %d\n", option);
-        buildMakefile(fileName, targetArr, option);
-
-
     }
 
-
-    free(target);
-    free(targetArr);
-    //free(fileName);
-
-    return 0;
+    //free(target);
+    makefile_del(m);
+    fclose(f);
 }
+
+
 
 FILE *openFile(char *name) {
 

@@ -1,0 +1,5 @@
+mmake : mmake.c parser.c
+	gcc mmake.c parser.c -o mmake
+
+mmake2 : mmake2.c mmake.c parser.c
+	gcc mmake2.c parser.c -o mmake2

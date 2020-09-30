@@ -2,10 +2,10 @@
 
 CC=gcc
 FLAGS1= -g -std=gnu11 -Werror -Wall -Wextra -Wpedantic
-FLAGS2= -Wmissing-declarations -Wmissing-prototypes -Wold-style-definition
+FLAGS2= -Wold-style-definition
 
 mmake: mmake.c parser.c
-	$(CC) $(FLAGS1) $(FLAGS2) mmake.c -o mmake
+	$(CC) $(FLAGS1) $(FLAGS2) mmake.c parser.c -o mmake
 
 #add clean commmand
 clean:

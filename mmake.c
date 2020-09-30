@@ -1,6 +1,8 @@
 #include <stdio.h>
+#include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -10,6 +12,9 @@
 #include "parser.h"
 
 #define MAX_LENGTH 1024
+#define OPT_SPEC_TARGET 50
+#define OPT_FORCE_BUILD 1
+#define OPT_DEFAULT 0
 
 struct makefile {
 	struct rule *rules;
@@ -26,87 +31,235 @@ struct rule {
 FILE *openFile(char *name);
 void printRule(struct rule *rule);
 int checkTimeDifference(const char *target, const char **prereq);
+void execCommand(struct rule *rule);
 
-void execCommand(struct rule *rule) {
-     pid_t pid = fork();
-    //If problem occurs, exit
-    if(pid < 0) {
-        perror("Error creating process");
+void buildMakefile(char *name, char **tarArray, int option) {
+
+    //Open file for reading
+    FILE *f = fopen(name, "r");
+
+    //if failed, exit with error
+    if(f == NULL) {
+        perror("File error");
         exit(EXIT_FAILURE);
     }
-    //Child process
-   if(pid == 0) {
-        //Child stuff
-        char **commandArgs = rule_cmd(rule);
-        //Execute command, exit if failed
-        printf("Executing command %s\n", commandArgs[0]);
-        if(execvp(commandArgs[0], commandArgs) < 0) {
-            perror("Error executing program");
-            exit(EXIT_FAILURE);
-        }
+
+    //Parse makefile, exit if failed
+    makefile *m = parse_makefile(f);
+
+    if(m == NULL) {
+        fprintf(stderr, "Failed to parse makefile!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    //Get default target in current folder or specified target
+    const char *target;
+
+    //For a certain option, try to build specific targets
+    if(option > OPT_SPEC_TARGET) {
+        //Option is sent in as (2 + targetCount)
+        for(int i = 0; i < option-OPT_SPEC_TARGET; i++) {
+            
+            target = tarArray[i];
+
+            //printf("Target: %s\n", target);
+            
+            //Check if target exists
+            
+            //printf("getting rules.. for %s\n", target);
+            //Check makefile rules for default target
+            struct rule *rules; 
+            
+            if(makefile_rule(m, target) != NULL) {
+                //printf("There is a rule!\n");
+                rules = makefile_rule(m, target);
+            }
+            else {
+                //No rules exist for target, print error message
+                fprintf(stderr, "No rules exist for %s!\n", target);
+                exit(EXIT_FAILURE);
+            }
+
+            printRule(rules);
+
+            //struct rule *nextRule = rules->next;
+            //printRule(nextRule);
                 
-    }
-    else {
-        //Parent
-        int status;
-        wait(&status);
-    }
-}
+            const char **prereq = rule_prereq(rules);
 
-
-int main(int argc, const char **argv) {
-
-    char *fileName = "mmakefile2";
-
-    //Read file
-    if(argc != 2) {
-
-        //Read specific file 'mmakefile'
-        FILE *f = openFile(fileName);
-
-        //Parse makefile, exit if failed
-        makefile *m = parse_makefile(f);
-        if(m == NULL) {
-            fprintf(stderr, "Failed to parse makefile!\n");
-            exit(EXIT_FAILURE);
+            if(checkTimeDifference(target, prereq) == 1) {
+                //BUILD
+                //printf("Prereq has been modified, building...\n");
+                //Create process and execute command
+                printf("Executing command..\n");
+                execCommand(rules);
+            }
+            else {
+                printf("%s is already up to date.\n", target);
+            }
         }
-        //Get default target in current folder
-        const char *target = makefile_default_target(m);
+        
+    }
+    //If no option given, build all targets in file
+    else {
+        if(tarArray[0] == NULL) {
+            //printf("No target specified, using default...\n");
+            target = makefile_default_target(m);
+        }
+        //Let user decide which targets to build
+        else {
+            target = tarArray[0];
+        }
 
-        printf("Default target: %s\n", target);
+        //printf("Default target: %s\n", target);
 
         //Check makefile rules for default target
         struct rule *rules = makefile_rule(m, target);
-    
-        
-        printRule(rules);
 
-        struct rule *nextRule = rules->next;
-        printRule(nextRule);
-        
+        //printRule(rules);
+
+        //struct rule *nextRule = rules->next;
+        //printRule(nextRule);
+            
         const char **prereq = rule_prereq(rules);
-        if(checkTimeDifference(target, prereq) == 0) {
+
+        if(checkTimeDifference(target, prereq) == 1 || option == 1) {
             //BUILD
             //printf("Prereq has been modified, building...\n");
             //Create process and execute command
+            //printf("executing first command..\n");
             execCommand(rules);
         }
-        //Else if file doesnt exist
-        //Else if -B flag is used
-
-
-
+        else {
+            printf("%s is already up to date.\n", target);
+        }
         
-        //When done, close the makefile
-        makefile_del(m);
+        //printf("Checking for more rules..\n");
+
+        //Check if building is needed for each rule
+        while(rules->next != NULL) {
+
+            //printf("Next rule..\n");
+            rules = rules->next;
+            //Wrong tar, need to loop anyway?
+            target = strdup(rules->target);
+            prereq = rule_prereq(rules);
+            
+            if(checkTimeDifference(target, prereq) == 1) {
+                //BUILD
+                //printf("Prereq has been modified, building...\n");
+                //Create process and execute command¨
+                //printf("Executing next command...\n");
+                execCommand(rules);
+            }
+
+        }
+    }
+
+    fclose(f);
+    makefile_del(m);
+}
+
+int main(int argc, char **argv) {
+
+    char *fileName = "mmakefile";
+    char *target = (char * ) malloc(sizeof(char) * MAX_LENGTH);
+    char **targetArr = (char **) malloc(sizeof(char)*MAX_LENGTH);
+
+    if(fileName == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+    if(target == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+    if(targetArr == NULL) {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+
+    //fileName = strdup("mmakefile");
+
+    //If no arguments, build file "mmakefile"
+    if(argc == 1) {
+        buildMakefile(fileName, targetArr, 0);
     }
     //File with arguments
     else {
-        printf("%s\n", argv[1]);
-    }
-    
+        int opt;
+        int option = OPT_DEFAULT;
+        //const char **targets;
+        //const char *target;
+        //Do different things depending on the flag used
+        while((opt = getopt(argc, argv, "Bsf:")) != -1) {
+            switch(opt) {
+                case 'f':
+                    // Let user specify a certain makefile
+                    fileName = strdup(optarg);
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("New makefile to use: %s\n", fileName);
 
-    
+                    break;
+                case 's':
+                    //close stdout
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("Closing stdout..\n");
+                    close(STDOUT_FILENO);
+                    break;
+                case 'B':
+                    //printf("Current optind: %d\n ", optind);
+                    //printf("Forcing rebuild...\n");
+                    //target = argv[optind];
+                    option = OPT_FORCE_BUILD;
+                    //buildMakefile(fileName, NULL, 1);
+                    break;
+                default:
+                    //Specify target
+                    //printf("Current optind: %d\n ", optind);
+                    printf("Unknown option!\n");
+                    //const char *target = strdup(argv[1]);
+                    //buildMakefile(fileName, target);
+                    exit(EXIT_SUCCESS);
+            }
+        }
+
+        //arguments after options are targets to build
+        //target = strdup(argv[optind]);
+        /*
+        printf("argv[optind] = %s\n", argv[optind]);
+        printf("Option: %d\n", option);
+        printf("Target: %s\n", target);
+        printf("Filename: %s\n", fileName);
+        */
+        //Let user choose a list of targets or go with default
+        int targetCount = 0;
+
+        //printf("Loops: %d\n", argc-optind);
+        for(int i = 0; i < argc-optind; i++) {
+            //add each target to array
+            targetArr[i] = strdup(argv[optind + i]);
+            printf("TargetArr[%d]: %s\n", i, targetArr[i]);
+            targetCount++;
+        }
+
+        
+        //Either check all targets in the rule or specific targets, use option to decide
+        if(targetArr[0] != NULL) {
+            option = OPT_SPEC_TARGET+targetCount;
+        }
+
+        //Parse the makefile and build the targets
+        printf("Building file with option value: %d\n", option);
+        buildMakefile(fileName, targetArr, option);
+
+
+    }
+
+
+    free(target);
+    free(targetArr);
+    //free(fileName);
 
     return 0;
 }
@@ -134,41 +287,43 @@ int checkTimeDifference(const char *target, const char **prereq) {
     //int arrSize = sizeof(prereq) / sizeof(prereq[0]);
     //printf("Size of string array: %d\n", arrSize);
 
-     printf("Checking target stats\n");
+    //printf("Checking target stats\n");
+
+    //If the file doesn't exist, return 1 to build
     if(stat(target, &targetStat) < 0) {
-        fprintf(stderr, "Error checking stat!\n");
-        exit(EXIT_FAILURE);
+        printf("File doesnt exist!\n");
+        return 1;
     }
-    printf("Access time  = %ld\n",targetStat.st_atime);
-    printf("Modification time  = %ld\n",targetStat.st_mtime);
+    //printf("Access time  = %ld\n",targetStat.st_atime);
+    //printf("Target modification time  = %ld\n",targetStat.st_mtime);
 
     printf("\n");
 
+    //Get the latest modification time of the target file
     time_t targetTime = targetStat.st_mtime;
-
 
     int i = 0;
     //Check all prerequisites
     while(prereq[i] != NULL) {
 
-        printf("Checking prereq stats\n");
-
+        //printf("Checking prereq stats\n");
+        //Get stats for the prerequisites, exit if failed
         if(stat(prereq[i], &prereqStat) < 0) {
             fprintf(stderr, "Error checking stat!\n");
             exit(EXIT_FAILURE);
         }
-        printf("File: %s\n", prereq[i]);
-        printf("Access time  = %ld\n",prereqStat.st_atime);
-        printf("Modification time  = %ld\n",prereqStat.st_mtime);
+        //printf("File: %s\n", prereq[i]);
+        //printf("Access time  = %ld\n",prereqStat.st_atime);
+        //printf("Prereq modification time  = %ld\n",prereqStat.st_mtime);
 
         time_t prereqTime = prereqStat.st_mtime;
 
         //Check time difference between target file and preqreq file
-        //double timeDiff = difftime(targetTime, prereqTime);
-        long int timeDiff = targetTime - prereqTime;
-        printf("Time difference: %ld\n", timeDiff);
+        long timeDiff = targetTime - prereqTime;
+        //printf("Time difference (%ld - %ld): %ld\n", targetTime, prereqTime, timeDiff);
 
-        if(difftime(targetTime, prereqTime) < 0) {
+        //If the prereq file has been modified later than the target, return 1
+        if(timeDiff < 0) {
             return 1;
         }
 
@@ -180,6 +335,49 @@ int checkTimeDifference(const char *target, const char **prereq) {
 
 }
 
+void execCommand(struct rule *rule) {
+
+     pid_t pid = fork();
+    //If problem occurs, exit
+    if(pid < 0) {
+        perror("Error creating process");
+        exit(EXIT_FAILURE);
+    }
+    //Child process
+   if(pid == 0) {
+        //Child stuff
+        char **commandArgs = rule_cmd(rule);
+        char *printCom;
+
+        //Execute command, exit if failed
+        int i = 0;
+        while(commandArgs[i] != NULL) {
+            if(i == 0) {
+                printCom = strdup(commandArgs[i]);
+                strcat(printCom, " ");
+            }
+            else {
+                strcat(printCom, commandArgs[i]);
+                strcat(printCom, " ");
+            }
+            i++;
+        }
+        printf("%s\n", printCom);
+
+        //Execute command, exit if failed
+        if(execvp(commandArgs[0], commandArgs) < 0) {
+            perror("Error executing program");
+            exit(EXIT_FAILURE);
+        }
+                
+    }
+    else {
+        //Parent
+        int status;
+        //printf("Waiting for child..\n");
+        wait(&status);
+    }
+}
 
 /*
 * TESTFUNCTION: Print contents of rule
@@ -192,12 +390,12 @@ void printRule(struct rule *rule) {
     int i = 0;
     //printf("TARGET: %s\n", rule->target);
     while(prereq[i] != NULL) {
-        printf("PREREQUISITE[%d]: %s\n", i, prereq[i]);
+        //printf("PREREQUISITE[%d]: %s\n", i, prereq[i]);
         i++;
     }
     int j = 0;
     while(cmd[j] != NULL) {
-        printf("COMMAND[%d]: %s\n", j, cmd[j]);
+        //printf("COMMAND[%d]: %s\n", j, cmd[j]);
         j++;
     }
 

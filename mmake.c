@@ -27,7 +27,7 @@ struct rule {
 	rule *next;
 };
 
-
+//ts
 FILE *openFile(char *name);
 void printRule(struct rule *rule);
 int checkTimeDifference(const char *target, const char **prereq);
@@ -37,29 +37,27 @@ void buildMakefile(char *name, char **tarArray, int option);
 
 
 int main(int argc, char **argv) {
-
-    char *fileName = "mmakefile";
-    char *target = (char * ) malloc(sizeof(char) * MAX_LENGTH);
-    char **targetArr = (char **) malloc(sizeof(char)*MAX_LENGTH);
+    //t
+    char defaultName[] = "mmakefile";
+    char *fileName = (char *) malloc(sizeof(defaultName));
+    char **targetArr = (char **) malloc(sizeof(char));
 
     if(fileName == NULL) {
         perror("Error allocating memory");
         exit(EXIT_FAILURE);
     }
-    if(target == NULL) {
-        perror("Error allocating memory");
-        exit(EXIT_FAILURE);
-    }
+    
     if(targetArr == NULL) {
         perror("Error allocating memory");
         exit(EXIT_FAILURE);
     }
-
     //fileName = strdup("mmakefile");
 
     //If no arguments, build file "mmakefile"
     if(argc == 1) {
-        buildMakefile(fileName, targetArr, 0);
+       
+        printf("Building file with option value: %d, file: %s\n", 0, defaultName);
+        buildMakefile(defaultName, targetArr, 0);
     }
     //File with arguments
     else {
@@ -67,12 +65,25 @@ int main(int argc, char **argv) {
         int option = OPT_DEFAULT;
         //const char **targets;
         //const char *target;
+
+        strcpy(fileName, defaultName);
+
         //Do different things depending on the flag used
         while((opt = getopt(argc, argv, "Bsf:")) != -1) {
             switch(opt) {
                 case 'f':
                     // Let user specify a certain makefile
-                    fileName = strdup(optarg);
+                    if(sizeof(optarg) > sizeof(defaultName)) {
+                        //Reallocate memory for argument
+                        fileName = (char *) realloc(fileName, sizeof(optarg));
+
+                        if(fileName == NULL) {
+                            perror("Error reallocating memory");
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                    
+                    strcpy(fileName, optarg);
                     //printf("Current optind: %d\n ", optind);
                     //printf("New makefile to use: %s\n", fileName);
 
@@ -110,11 +121,21 @@ int main(int argc, char **argv) {
         */
         //Let user choose a list of targets or go with default
         int targetCount = 0;
+    
 
-        //printf("Loops: %d\n", argc-optind);
+        printf("Loops: %d\n", argc-optind);
         for(int i = 0; i < argc-optind; i++) {
-            //add each target to array
+            //Allocate enough size for each new target argument
+            printf("Reallocating mem for array..\n");
+            targetArr = realloc(targetArr, sizeof(targetArr)+(sizeof(argv[optind+i])));
+            
+            if(targetArr == NULL) {
+                perror("Error reallocating memory");
+                exit(EXIT_FAILURE);
+            }
+
             targetArr[i] = argv[optind + i];
+
             printf("TargetArr[%d]: %s\n", i, targetArr[i]);
             targetCount++;
         }
@@ -122,20 +143,24 @@ int main(int argc, char **argv) {
         
         //Either check all targets in the rule or specific targets, use option to decide
         if(targetArr[0] != NULL) {
-            option = OPT_SPEC_TARGET+targetCount;
+            option += (OPT_SPEC_TARGET+targetCount);
         }
 
         //Parse the makefile and build the targets
-        printf("Building file with option value: %d\n", option);
+        printf("Building file with option value: %d, file: %s\n", option, fileName);
         buildMakefile(fileName, targetArr, option);
 
-
+        printf("freeing file\n");
     }
 
 
-    free(target);
+
+
+    
+    printf("freeing target\n");
     free(targetArr);
     free(fileName);
+    
 
     return 0;
 }
@@ -164,27 +189,23 @@ void buildMakefile(char *name, char **tarArray, int option) {
     //For a certain option, try to build specific targets
     if(option > OPT_SPEC_TARGET) {
         //Option is sent in as (2 + targetCount)
+
+        printf("looping %d times\n", option-OPT_SPEC_TARGET );
+
         for(int i = 0; i < option-OPT_SPEC_TARGET; i++) {
             
             target = tarArray[i];
 
-            //printf("Target: %s\n", target);
+            printf("Target: %s\n", target);
             
             //Check if target exists
             
             //printf("getting rules.. for %s\n", target);
             //Check makefile rules for default target
-            struct rule *rules; 
             
-            if(makefile_rule(m, target) != NULL) {
-                //printf("There is a rule!\n");
-                rules = makefile_rule(m, target);
-            }
-            else {
-                //No rules exist for target, print error message
-                fprintf(stderr, "No rules exist for %s!\n", target);
-                exit(EXIT_FAILURE);
-            }
+            
+            printf("Checking rule..\n");
+            struct rule *rules = makefile_rule(m, target); 
 
             printRule(rules);
 
@@ -209,7 +230,7 @@ void buildMakefile(char *name, char **tarArray, int option) {
     //If no option given, build all targets in file
     else {
         if(tarArray[0] == NULL) {
-            //printf("No target specified, using default...\n");
+            printf("No target specified, using default...\n");
             target = makefile_default_target(m);
         }
         //Let user decide which targets to build
@@ -266,8 +287,8 @@ void buildMakefile(char *name, char **tarArray, int option) {
     }
 
     //free(target);
-    makefile_del(m);
     fclose(f);
+    makefile_del(m);
 }
 
 

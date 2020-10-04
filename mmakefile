@@ -1,2 +1,2 @@
-mmake: mmake.c parser.c
-	gcc mmake.c parser.c -o mmake
+A.test: nosuchfile.txt
+	touch A.test
